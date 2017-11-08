@@ -12,7 +12,7 @@
   @section intro Introduction to EOSC
 
   `eosc` is a command line tool that interfaces with the REST api exposed by @ref eosd. In order to use `eosc` you will need to
-  have a local copy of `eosd` running and configured to load the 'eos::chain_api_plugin'.
+  have a local copy of `eosd` running and configured to load the 'eosio::chain_api_plugin'.
 
    eosc contains documentation for all of its commands. For a list of all commands known to eosc, simply run it with no arguments:
 ```
@@ -97,12 +97,12 @@ Options:
 #include <config.hpp>
 
 using namespace std;
-using namespace eos;
-using namespace eos::chain;
-using namespace eos::utilities;
-using namespace eos::client::help;
-using namespace eos::client::localize;
-using namespace eos::client::config;
+using namespace eosio;
+using namespace eosio::chain;
+using namespace eosio::utilities;
+using namespace eosio::client::help;
+using namespace eosio::client::localize;
+using namespace eosio::client::config;
 using namespace boost::filesystem;
 
 FC_DECLARE_EXCEPTION( explained_exception, 9000000, "explained exception, see error log" );
@@ -202,20 +202,20 @@ vector<uint8_t> assemble_wast( const std::string& wast ) {
    }
 }
 
-auto tx_expiration = fc::seconds(1);
+auto tx_expiration = fc::seconds(30);
 bool tx_force_unique = false;
 void add_standard_transaction_options(CLI::App* cmd) {
    CLI::callback_t parse_exipration = [](CLI::results_t res) -> bool {
-      double value_ms; 
-      if (res.size() == 0 || !CLI::detail::lexical_cast(res[0], value_ms)) {
+      double value_s;
+      if (res.size() == 0 || !CLI::detail::lexical_cast(res[0], value_s)) {
          return false;
       }
       
-      tx_expiration = fc::microseconds(static_cast<uint64_t>(value_ms * 1000.0));
+      tx_expiration = fc::seconds(static_cast<uint64_t>(value_s));
       return true;
    };
 
-   cmd->add_option("-x,--expiration", parse_exipration, localized("set the time in milliseconds before a transaction expires, defaults to 1000ms"));
+   cmd->add_option("-x,--expiration", parse_exipration, localized("set the time in seconds before a transaction expires, defaults to 30s"));
    cmd->add_flag("-f,--force-unique", tx_force_unique, localized("force the transaction to be unique. this will consume extra bandwidth and remove any protections against accidently issuing the same transaction multiple times"));
 }
 
@@ -253,8 +253,8 @@ template<typename T>
 fc::variant call( const std::string& path,
                   const T& v ) { return call( host, port, path, fc::variant(v) ); }
 
-eos::chain_apis::read_only::get_info_results get_info() {
-  return call(host, port, get_info_func ).as<eos::chain_apis::read_only::get_info_results>();
+eosio::chain_apis::read_only::get_info_results get_info() {
+  return call(host, port, get_info_func ).as<eosio::chain_apis::read_only::get_info_results>();
 }
 
 void sign_transaction(SignedTransaction& trx) {
@@ -285,9 +285,9 @@ fc::variant push_transaction( SignedTransaction& trx, bool sign ) {
 
 
 void create_account(Name creator, Name newaccount, public_key_type owner, public_key_type active, bool sign) {
-      auto owner_auth   = eos::chain::Authority{1, {{owner, 1}}, {}};
-      auto active_auth  = eos::chain::Authority{1, {{active, 1}}, {}};
-      auto recovery_auth = eos::chain::Authority{1, {}, {{{creator, "active"}, 1}}};
+      auto owner_auth   = eosio::chain::Authority{1, {{owner, 1}}, {}};
+      auto active_auth  = eosio::chain::Authority{1, {{active, 1}}, {}};
+      auto recovery_auth = eosio::chain::Authority{1, {}, {{{creator, "active"}, 1}}};
 
       uint64_t deposit = 1;
 
@@ -360,6 +360,7 @@ struct set_account_permission_subcommand {
       permissions->add_option("authority", authorityJsonOrFile, localized("[delete] NULL, [create/update] JSON string or filename defining the authority"))->required();
       permissions->add_option("parent", parentStr, localized("[create] The permission name of this parents permission (Defaults to: \"Active\")"));
       permissions->add_flag("-s,--skip-sign", skip_sign, localized("Specify if unlocked wallet keys should be used to sign transaction"));
+      add_standard_transaction_options(permissions);
 
       permissions->set_callback([this] {
          Name account = Name(accountStr);
@@ -426,6 +427,7 @@ struct set_action_permission_subcommand {
       permissions->add_option("type", typeStr, localized("the type of the action"))->required();
       permissions->add_option("requirement", requirementStr, localized("[delete] NULL, [set/update] The permission name require for executing the given action"))->required();
       permissions->add_flag("-s,--skip-sign", skip_sign, localized("Specify if unlocked wallet keys should be used to sign transaction"));
+      add_standard_transaction_options(permissions);
 
       permissions->set_callback([this] {
          Name account = Name(accountStr);
@@ -486,6 +488,7 @@ int main( int argc, char** argv ) {
    createAccount->add_option("OwnerKey", ownerKey, localized("The owner public key for the account"))->required();
    createAccount->add_option("ActiveKey", activeKey, localized("The active public key for the account"))->required();
    createAccount->add_flag("-s,--skip-signature", skip_sign, localized("Specify that unlocked wallet keys should not be used to sign transaction"));
+   add_standard_transaction_options(createAccount);
    createAccount->set_callback([&] {
       create_account(creator, name, public_key_type(ownerKey), public_key_type(activeKey), !skip_sign);
    });
@@ -498,6 +501,7 @@ int main( int argc, char** argv ) {
    createProducer->add_option("-p,--permission", permissions,
                               localized("An account and permission level to authorize, as in 'account@permission' (default user@active)"));
    createProducer->add_flag("-s,--skip-signature", skip_sign, localized("Specify that unlocked wallet keys should not be used to sign transaction"));
+   add_standard_transaction_options(createProducer);
    createProducer->set_callback([&name, &ownerKey, &permissions, &skip_sign] {
       if (permissions.empty()) {
          permissions.push_back(name + "@active");
@@ -671,6 +675,7 @@ int main( int argc, char** argv ) {
    auto abi = contractSubcommand->add_option("abi-file,-a,--abi", abiPath, localized("The ABI for the contract"))
               ->check(CLI::ExistingFile);
    contractSubcommand->add_flag("-s,--skip-sign", skip_sign, localized("Specify if unlocked wallet keys should be used to sign transaction"));
+   add_standard_transaction_options(contractSubcommand);
    contractSubcommand->set_callback([&] {
       std::string wast;
       std::cout << localized("Reading WAST...") << std::endl;
@@ -704,6 +709,7 @@ int main( int argc, char** argv ) {
    producerSubcommand->add_option("-p,--permission", permissions,
                               localized("An account and permission level to authorize, as in 'account@permission' (default user@active)"));
    producerSubcommand->add_flag("-s,--skip-signature", skip_sign, localized("Specify that unlocked wallet keys should not be used to sign transaction"));
+   add_standard_transaction_options(producerSubcommand);
    producerSubcommand->set_callback([&] {
       // don't need to check unapproveCommand because one of approve or unapprove is required
       bool approve = producerSubcommand->got_subcommand(approveCommand);
@@ -730,6 +736,7 @@ int main( int argc, char** argv ) {
    proxySubcommand->add_option("-p,--permission", permissions,
                                   localized("An account and permission level to authorize, as in 'account@permission' (default user@active)"));
    proxySubcommand->add_flag("-s,--skip-signature", skip_sign, localized("Specify that unlocked wallet keys should not be used to sign transaction"));
+   add_standard_transaction_options(proxySubcommand);
    proxySubcommand->set_callback([&] {
       if (permissions.empty()) {
          permissions.push_back(name + "@active");
@@ -901,6 +908,7 @@ int main( int argc, char** argv ) {
    auto benchmark_setup = benchmark->add_subcommand( "setup", localized("Configures initial condition for benchmark") );
    uint64_t number_of_accounts = 2;
    benchmark_setup->add_option("accounts", number_of_accounts, localized("the number of accounts in transfer among"))->required();
+   add_standard_transaction_options(benchmark_setup);
    benchmark_setup->set_callback([&]{
       std::cerr << localized("Creating ${number_of_accounts} accounts with initial balances", ("number_of_accounts",number_of_accounts)) << std::endl;
       EOSC_ASSERT( number_of_accounts >= 2, "must create at least 2 accounts" );
@@ -914,9 +922,9 @@ int main( int argc, char** argv ) {
         public_key_type owner, active;
         Name creator("inita" );
 
-        auto owner_auth   = eos::chain::Authority{1, {{owner, 1}}, {}};
-        auto active_auth  = eos::chain::Authority{1, {{active, 1}}, {}};
-        auto recovery_auth = eos::chain::Authority{1, {}, {{{creator, "active"}, 1}}};
+        auto owner_auth   = eosio::chain::Authority{1, {{owner, 1}}, {}};
+        auto active_auth  = eosio::chain::Authority{1, {{active, 1}}, {}};
+        auto recovery_auth = eosio::chain::Authority{1, {}, {{{creator, "active"}, 1}}};
         
         uint64_t deposit = 1;
         
@@ -940,6 +948,7 @@ int main( int argc, char** argv ) {
    benchmark_transfer->add_option("accounts", number_of_accounts, localized("the number of accounts in transfer among"))->required();
    benchmark_transfer->add_option("count", number_of_transfers, localized("the number of transfers to execute"))->required();
    benchmark_transfer->add_option("loop", loop, localized("whether or not to loop for ever"));
+   add_standard_transaction_options(benchmark_transfer);
    benchmark_transfer->set_callback([&]{
       EOSC_ASSERT( number_of_accounts >= 2, "must create at least 2 accounts" );
 
@@ -1030,6 +1039,7 @@ int main( int argc, char** argv ) {
                                  localized("An account and permission level to authorize, as in 'account@permission'"));
    messageSubcommand->add_option("-S,--scope", scopes, localized("An comma separated list of accounts in scope for this operation"), true);
    messageSubcommand->add_flag("-s,--skip-sign", skip_sign, localized("Specify that unlocked wallet keys should not be used to sign transaction"));
+   add_standard_transaction_options(messageSubcommand);
    messageSubcommand->set_callback([&] {
       ilog("Converting argument to binary...");
       auto arg= fc::mutable_variant_object

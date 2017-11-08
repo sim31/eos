@@ -29,32 +29,32 @@
 #include <exchange/exchange.wast.hpp>
 #include <infinite/infinite.wast.hpp>
 
-using namespace eos;
+using namespace eosio;
 using namespace chain;
 
 
-   struct OrderID {
+   struct order_id {
       AccountName name;
       uint64_t    number  = 0;
    };
 
-   struct __attribute((packed)) Bid {
-      OrderID            buyer;
+   struct __attribute((packed)) bid {
+      order_id           buyer;
       unsigned __int128  price;
       uint64_t           quantity;
       Time               expiration;
       uint8_t            fill_or_kill = false;
    };
-   struct __attribute((packed)) Ask {
-      OrderID            seller;
+   struct __attribute((packed)) ask {
+      order_id           seller;
       unsigned __int128  price;
       uint64_t           quantity;
       Time               expiration;
       uint8_t            fill_or_kill = false;
    };
-FC_REFLECT( OrderID, (name)(number) );
-FC_REFLECT( Bid, (buyer)(price)(quantity)(expiration)(fill_or_kill) );
-FC_REFLECT( Ask, (seller)(price)(quantity)(expiration)(fill_or_kill) );
+FC_REFLECT( order_id, (name)(number) );
+FC_REFLECT( bid, (buyer)(price)(quantity)(expiration)(fill_or_kill) );
+FC_REFLECT( ask, (seller)(price)(quantity)(expiration)(fill_or_kill) );
 
    struct record {
       uint64_t a = 0;
@@ -274,7 +274,7 @@ void SetCode( testing_blockchain& chain, AccountName account, const char* wast )
       memcpy( handler.code.data(), wasm.data(), wasm.size() );
 
       {
-         eos::chain::SignedTransaction trx;
+         eosio::chain::SignedTransaction trx;
          trx.scope = {account};
          trx.messages.resize(1);
          trx.messages[0].code = config::EosContractName;
@@ -288,7 +288,7 @@ void SetCode( testing_blockchain& chain, AccountName account, const char* wast )
 } FC_LOG_AND_RETHROW( ) }
 
 void TransferCurrency( testing_blockchain& chain, AccountName from, AccountName to, uint64_t amount ) {
-   eos::chain::SignedTransaction trx;
+   eosio::chain::SignedTransaction trx;
    trx.scope = sort_names({from,to});
    transaction_emplace_message(trx, "currency", 
                       vector<types::AccountPermission>{ {from,"active"} },
@@ -301,7 +301,7 @@ void TransferCurrency( testing_blockchain& chain, AccountName from, AccountName 
 }
 
 void WithdrawCurrency( testing_blockchain& chain, AccountName from, AccountName to, uint64_t amount ) {
-   eos::chain::SignedTransaction trx;
+   eosio::chain::SignedTransaction trx;
    trx.scope = sort_names({from,to});
    transaction_emplace_message(trx, "currency", 
                       vector<types::AccountPermission>{ {from,"active"},{to,"active"} },
@@ -328,7 +328,7 @@ BOOST_FIXTURE_TEST_CASE(create_script, testing_fixture)
       memcpy( handler.code.data(), wasm.data(), wasm.size() );
 
       {
-         eos::chain::SignedTransaction trx;
+         eosio::chain::SignedTransaction trx;
          trx.scope = {"currency"};
          trx.messages.resize(1);
          trx.messages[0].code = config::EosContractName;
@@ -344,7 +344,7 @@ BOOST_FIXTURE_TEST_CASE(create_script, testing_fixture)
       auto start = fc::time_point::now();
       for (uint32_t i = 0; i < 10000; ++i)
       {
-         eos::chain::SignedTransaction trx;
+         eosio::chain::SignedTransaction trx;
          trx.scope = sort_names({"currency","inita"});
          transaction_emplace_message(trx, "currency", 
                             vector<types::AccountPermission>{ {"currency","active"} },
@@ -376,13 +376,13 @@ unsigned __int128 to_price( double p ) {
 
 void SellCurrency( testing_blockchain& chain, AccountName seller, AccountName exchange, uint64_t ordernum, uint64_t cur_quantity, double price ) {
 
-   Ask b {  OrderID{seller,ordernum}, 
+   ask b {  order_id{seller,ordernum},
             to_price(price),
             cur_quantity, 
             chain.head_block_time()+fc::days(3) 
          };
 
-   eos::chain::SignedTransaction trx;
+   eosio::chain::SignedTransaction trx;
    trx.scope = sort_names({"exchange"});
    transaction_emplace_message(trx, "exchange", 
                       vector<types::AccountPermission>{ {seller,"active"} },
@@ -394,13 +394,13 @@ void SellCurrency( testing_blockchain& chain, AccountName seller, AccountName ex
 
 }
 void BuyCurrency( testing_blockchain& chain, AccountName buyer, AccountName exchange, uint64_t ordernum, uint64_t cur_quantity, double price ) {
-   Bid b {  OrderID{buyer,ordernum}, 
+   bid b {  order_id{buyer,ordernum},
             to_price(price),
             cur_quantity, 
             chain.head_block_time()+fc::days(3) 
          };
 
-   eos::chain::SignedTransaction trx;
+   eosio::chain::SignedTransaction trx;
    trx.scope = sort_names({"exchange"});
    transaction_emplace_message(trx, "exchange", 
                       vector<types::AccountPermission>{ {buyer,"active"} },
@@ -1093,7 +1093,7 @@ R"(
       handler.code.resize(wasm.size());
       memcpy( handler.code.data(), wasm.data(), wasm.size() );
 
-      eos::chain::SignedTransaction trx;
+      eosio::chain::SignedTransaction trx;
       trx.scope = {"simplecoin"};
       trx.messages.resize(1);
       trx.messages[0].code = config::EosContractName;
@@ -1130,7 +1130,7 @@ BOOST_FIXTURE_TEST_CASE(create_script_w_loop, testing_fixture)
       memcpy( handler.code.data(), wasm.data(), wasm.size() );
 
       {
-         eos::chain::SignedTransaction trx;
+         eosio::chain::SignedTransaction trx;
          trx.scope = {"currency"};
          trx.messages.resize(1);
          trx.messages[0].code = config::EosContractName;
@@ -1144,7 +1144,7 @@ BOOST_FIXTURE_TEST_CASE(create_script_w_loop, testing_fixture)
 
 
       {
-         eos::chain::SignedTransaction trx;
+         eosio::chain::SignedTransaction trx;
          trx.scope = sort_names({"currency","inita"});
          transaction_emplace_message(trx, "currency",
                             vector<types::AccountPermission>{ {"currency","active"} },
@@ -1157,7 +1157,7 @@ BOOST_FIXTURE_TEST_CASE(create_script_w_loop, testing_fixture)
             chain.push_transaction(trx);
             BOOST_FAIL("transaction should have failed with checktime_exceeded");
          }
-         catch (const eos::chain::checktime_exceeded& check)
+         catch (const eosio::chain::checktime_exceeded& check)
          {
             wlog("checktime_exceeded caught");
          }

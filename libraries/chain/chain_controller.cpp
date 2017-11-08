@@ -38,7 +38,7 @@
 #include <iostream>
 #include <chrono>
 
-namespace eos { namespace chain {
+namespace eosio { namespace chain {
 bool chain_controller::is_known_block(const block_id_type& id)const
 {
    return _fork_db.is_known_block(id) || _block_log.read_block_by_id(id);
@@ -1229,6 +1229,7 @@ void chain_controller::initialize_chain(chain_initializer_interface& starter)
 
          // create a dummy block and cycle for our dummy transactions to send to applied_irreversible_block below
          signed_block block{};
+         block.producer = config::EosContractName;
          block.cycles.emplace_back();
          block.cycles[0].emplace_back();
 
@@ -1563,7 +1564,7 @@ ProcessedTransaction chain_controller::transaction_from_variant( const fc::varia
                result.messages[i].data = message_to_binary( result.messages[i].code, result.messages[i].type, data ); 
                /*
                const auto& code_account = _db.get<account_object,by_name>( result.messages[i].code );
-               eos::types::Abi abi;
+               eosio::types::Abi abi;
                if( AbiSerializer::to_abi(code_account.abi, abi) ) {
                   types::AbiSerializer abis( abi );
                   result.messages[i].data = abis.variantToBinary( abis.getActionType( result.messages[i].type ), data );
@@ -1583,7 +1584,7 @@ ProcessedTransaction chain_controller::transaction_from_variant( const fc::varia
 vector<char> chain_controller::message_to_binary( Name code, Name type, const fc::variant& obj )const 
 { try {
    const auto& code_account = _db.get<account_object,by_name>( code );
-   eos::types::Abi abi;
+   eosio::types::Abi abi;
    if( types::AbiSerializer::to_abi(code_account.abi, abi) ) {
       types::AbiSerializer abis( abi );
       return abis.variantToBinary( abis.getActionType( type ), obj );
@@ -1592,7 +1593,7 @@ vector<char> chain_controller::message_to_binary( Name code, Name type, const fc
 } FC_CAPTURE_AND_RETHROW( (code)(type)(obj) ) }
 fc::variant chain_controller::message_from_binary( Name code, Name type, const vector<char>& data )const {
    const auto& code_account = _db.get<account_object,by_name>( code );
-   eos::types::Abi abi;
+   eosio::types::Abi abi;
    if( types::AbiSerializer::to_abi(code_account.abi, abi) ) {
       types::AbiSerializer abis( abi );
       return abis.binaryToVariant( abis.getActionType( type ), data );

@@ -5,7 +5,7 @@
 #pragma once
 #include <eoslib/types.h>
 
-namespace  eos {
+namespace  eosio {
 
    /**
     *  Converts a base32 symbol into its binary representation, used by string_to_name()
@@ -55,7 +55,7 @@ namespace  eos {
     * @brief used to generate a compile time uint64_t from the base32 encoded string interpretation of X
     * @ingroup types
     */
-   #define N(X) ::eos::string_to_name(#X)
+   #define N(X) ::eosio::string_to_name(#X)
 
    /**
     *  @class Name
@@ -72,7 +72,7 @@ namespace  eos {
       operator uint64_t()const { return value; }
 
       friend bool operator==( const Name& a, const Name& b ) { return a.value == b.value; }
-      AccountName value = 0;
+      account_name value = 0;
    };
 
    /// @}
