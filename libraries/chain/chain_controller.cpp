@@ -86,14 +86,6 @@ optional<signed_block> chain_controller::fetch_block_by_number(uint32_t num)cons
    return optional<signed_block>();
 }
 
-const signed_transaction& chain_controller::get_recent_transaction(const transaction_id_type& trx_id) const
-{
-   auto& index = _db.get_index<transaction_multi_index, by_trx_id>();
-   auto itr = index.find(trx_id);
-   FC_ASSERT(itr != index.end());
-   return itr->trx;
-}
-
 std::vector<block_id_type> chain_controller::get_block_ids_on_fork(block_id_type head_of_fork) const
 {
   pair<fork_database::branch_type, fork_database::branch_type> branches = _fork_db.fetch_branch_from(head_block_id(), head_of_fork);
@@ -127,7 +119,7 @@ const generated_transaction& chain_controller::get_generated_transaction( const 
  */
 bool chain_controller::push_block(const signed_block& new_block, uint32_t skip)
 { try {
-   return with_skip_flags( skip, [&](){ 
+   return with_skip_flags( skip, [&](){
       return without_pending_transactions( [&]() {
          return _db.with_write_lock( [&]() {
             return _push_block(new_block);
@@ -201,13 +193,13 @@ bool chain_controller::_push_block(const signed_block& new_block)
       if( (fc::time_point::now() - new_block.timestamp) < fc::seconds(60) )
       {
          auto exec_stop = std::chrono::high_resolution_clock::now();
-         auto exec_ms = std::chrono::duration_cast<std::chrono::milliseconds>(exec_stop - exec_start);      
+         auto exec_ms = std::chrono::duration_cast<std::chrono::milliseconds>(exec_stop - exec_start);
          size_t trxcount = 0;
          for (const auto& cycle : new_block.cycles)
             for (const auto& thread : cycle)
                trxcount += thread.user_input.size();
-         ilog( "${producer} #${num} @${time}  | ${trxcount} trx, ${pending} pending, exectime_ms=${extm}", 
-            ("producer", new_block.producer) 
+         ilog( "${producer} #${num} @${time}  | ${trxcount} trx, ${pending} pending, exectime_ms=${extm}",
+            ("producer", new_block.producer)
             ("time", new_block.timestamp)
             ("num", new_block.block_num())
             ("trxcount", trxcount)
@@ -260,7 +252,7 @@ processed_transaction chain_controller::_push_transaction(const signed_transacti
    temp_session.squash();
 
    // notify anyone listening to pending transactions
-   on_pending_transaction(trx); /// TODO move this to apply... ??? why... 
+   on_pending_transaction(trx); /// TODO move this to apply... ??? why...
 
    return pt;
 }
@@ -273,7 +265,7 @@ signed_block chain_controller::generate_block(
    uint32_t skip /* = 0 */
    )
 { try {
-   return with_skip_flags( skip, [&](){
+   return with_skip_flags( skip | created_block, [&](){
       auto b = _db.with_write_lock( [&](){
          return _generate_block( when, producer, block_signing_private_key, scheduler );
       });
@@ -301,7 +293,7 @@ signed_block chain_controller::_generate_block(
    if( !(skip & skip_producer_signature) )
       FC_ASSERT( producer_obj.signing_key == block_signing_private_key.get_public_key() );
 
-  
+
    //
    // The following code throws away existing pending_tx_session and
    // rebuilds it by re-applying pending transactions.
@@ -325,7 +317,7 @@ signed_block chain_controller::_generate_block(
       const auto& gt = *iter;
       pending.emplace_back(std::reference_wrapper<const generated_transaction> {gt.trx});
    }
-   
+
    for(const auto& st: _pending_transactions) {
       pending.emplace_back(std::reference_wrapper<const signed_transaction> {st});
    }
@@ -363,7 +355,7 @@ signed_block chain_controller::_generate_block(
              } else {
                 FC_THROW_EXCEPTION(tx_scheduling_exception, "Unknown transaction type in block_schedule");
              }
-             
+
              temp_session.squash();
              valid_transaction_count++;
           }
@@ -377,7 +369,7 @@ signed_block chain_controller::_generate_block(
                 invalid_pending.emplace(t.id());
              } else if (trx.contains<std::reference_wrapper<const generated_transaction>>()) {
                 wlog( "The transaction was ${t}", ("t", trx.get<std::reference_wrapper<const generated_transaction>>().get()) );
-             } 
+             }
              invalid_transaction_count++;
           }
        }
@@ -393,7 +385,7 @@ signed_block chain_controller::_generate_block(
         pending_block.cycles.emplace_back(std::move(block_cycle));
      }
    }
-   
+
    size_t postponed_tx_count = pending.size() - valid_transaction_count - invalid_transaction_count;
    if( postponed_tx_count > 0 )
    {
@@ -499,24 +491,24 @@ struct path_cons_list {
    typedef static_variant<int, const char *> head_type;
    typedef const path_cons_list* tail_ref_type;
    typedef optional<tail_ref_type> tail_type;
-   
-   path_cons_list(int index, const path_cons_list &rest) 
+
+   path_cons_list(int index, const path_cons_list &rest)
       : head(head_type(index))
       , tail(tail_ref_type(&rest))
    { }
 
-   path_cons_list(const char *path, const path_cons_list &rest) 
+   path_cons_list(const char *path, const path_cons_list &rest)
       : head(head_type(path))
       , tail(tail_ref_type(&rest))
    { }
 
-   path_cons_list(const char *path) 
+   path_cons_list(const char *path)
       : head(head_type(path))
       , tail()
    { }
 
    //path_cons_list( path_cons_list && ) = delete;
-   
+
    const head_type head;
    tail_type tail;
 
@@ -550,7 +542,7 @@ string resolve_path_string(const path_cons_list& path) {
 template<typename T>
 void check_output(const T& expected, const T& actual, const path_cons_list& path) {
    try {
-      EOS_ASSERT((expected == actual), block_tx_output_exception, 
+      EOS_ASSERT((expected == actual), block_tx_output_exception,
          "expected: ${expected}, actual: ${actual}", ("expected", expected)("actual", actual));
    } FC_RETHROW_EXCEPTIONS(warn, "at: ${path}", ("path", resolve_path_string(path)));
 }
@@ -558,7 +550,7 @@ void check_output(const T& expected, const T& actual, const path_cons_list& path
 template<typename T>
 void check_output(const vector<T>& expected, const vector<T>& actual, const path_cons_list& path) {
    check_output(expected.size(), actual.size(), path(".size()"));
-   for(int idx=0; idx < expected.size(); idx++) {
+   for(size_t idx=0; idx < expected.size(); idx++) {
       const auto &expected_element = expected.at(idx);
       const auto &actual_element = actual.at(idx);
       check_output(expected_element, actual_element, path(idx));
@@ -576,7 +568,7 @@ void check_output(const fc::optional<T>& expected, const fc::optional<T>& actual
 template<>
 void check_output(const types::bytes& expected, const types::bytes& actual, const path_cons_list& path) {
   check_output(expected.size(), actual.size(), path(".size()"));
-  
+
   auto cmp_result = std::memcmp(expected.data(), actual.data(), expected.size());
   check_output(cmp_result, 0, path("@memcmp()"));
 }
@@ -649,7 +641,7 @@ void chain_controller::_apply_block(const signed_block& next_block)
              ("calc",next_block.calculate_merkle_root())("next_block",next_block)("id",next_block.id()));
 
    const producer_object& signing_producer = validate_block_header(skip, next_block);
-   
+
    for (const auto& cycle : next_block.cycles)
       for (const auto& thread : cycle)
          for (const auto& trx : thread.user_input) {
@@ -666,16 +658,16 @@ void chain_controller::_apply_block(const signed_block& next_block)
     * when building a block.
     */
    auto root_path = path_cons_list("next_block.cycles");
-   for (int c_idx = 0; c_idx < next_block.cycles.size(); c_idx++) {
+   for (size_t c_idx = 0; c_idx < next_block.cycles.size(); c_idx++) {
       const auto& cycle = next_block.cycles.at(c_idx);
       auto c_path = path_cons_list(c_idx, root_path);
 
-      for (int t_idx = 0; t_idx < cycle.size(); t_idx++) {
+      for (size_t t_idx = 0; t_idx < cycle.size(); t_idx++) {
          const auto& thread = cycle.at(t_idx);
          auto t_path = path_cons_list(t_idx, c_path);
 
          auto gen_path = path_cons_list(".generated_input", t_path);
-         for(int p_idx = 0; p_idx < thread.generated_input.size(); p_idx++ ) {
+         for(size_t p_idx = 0; p_idx < thread.generated_input.size(); p_idx++ ) {
             const auto& ptrx = thread.generated_input.at(p_idx);
             const auto& trx = get_generated_transaction(ptrx.id);
             auto processed = apply_transaction(trx);
@@ -683,7 +675,7 @@ void chain_controller::_apply_block(const signed_block& next_block)
          }
 
          auto user_path = path_cons_list(".user_input", t_path);
-         for(int p_idx = 0; p_idx < thread.user_input.size(); p_idx++ ) {
+         for(size_t p_idx = 0; p_idx < thread.user_input.size(); p_idx++ ) {
             const auto& ptrx = thread.user_input.at(p_idx);
             const signed_transaction& trx = ptrx;
             auto processed = apply_transaction(trx);
@@ -701,7 +693,7 @@ void chain_controller::_apply_block(const signed_block& next_block)
    clear_expired_transactions();
 
    // notify observers that the block has been applied
-   // TODO: do this outside the write lock...? 
+   // TODO: do this outside the write lock...?
    applied_block( next_block ); //emit
    if (_currently_replaying_blocks)
      applied_irreversible_block(next_block);
@@ -827,7 +819,7 @@ void chain_controller::record_transaction(const signed_transaction& trx) {
    //Insert transaction into unique transactions database.
     _db.create<transaction_object>([&](transaction_object& transaction) {
         transaction.trx_id = trx.id(); /// TODO: consider caching ID
-        transaction.trx = trx;
+        transaction.expiration = trx.expiration;
     });
 }
 
@@ -835,7 +827,7 @@ void chain_controller::record_transaction(const generated_transaction& trx) {
    _db.modify( _db.get<generated_transaction_object,generated_transaction_object::by_trx_id>(trx.id), [&](generated_transaction_object& transaction) {
       transaction.status = generated_transaction_object::PROCESSED;
    });
-}     
+}
 
 
 
@@ -919,17 +911,17 @@ void chain_controller::rate_limit_message(const message& message)
          _db.create<rate_limiting_object>([&](rate_limiting_object& rlo) {
             rlo.name = permission.account;
             rlo.per_auth_account_txn_msg_rate = 1;
-            rlo.per_auth_account_last_update_sec = now;
+            rlo.per_auth_account_txn_msg_rate_last_update_sec = now;
          });
       }
       else
       {
          const auto message_rate =
-               _transaction_message_rate(now, rate_limiting->per_auth_account_last_update_sec, _per_auth_account_txn_msg_rate_limit_time_frame_sec,
+               _transaction_message_rate(now, rate_limiting->per_auth_account_txn_msg_rate_last_update_sec, _per_auth_account_txn_msg_rate_limit_time_frame_sec,
                                         _per_auth_account_txn_msg_rate_limit, rate_limiting->per_auth_account_txn_msg_rate, authorization_account, permission.account);
          _db.modify(*rate_limiting, [&] (rate_limiting_object& rlo) {
             rlo.per_auth_account_txn_msg_rate = message_rate;
-            rlo.per_auth_account_last_update_sec = now;
+            rlo.per_auth_account_txn_msg_rate_last_update_sec = now;
          });
       }
    }
@@ -941,23 +933,27 @@ void chain_controller::rate_limit_message(const message& message)
       _db.create<rate_limiting_object>([&](rate_limiting_object& rlo) {
          rlo.name = message.code;
          rlo.per_code_account_txn_msg_rate = 1;
-         rlo.per_code_account_last_update_sec = now;
+         rlo.per_code_account_txn_msg_rate_last_update_sec = now;
       });
    }
    else
    {
       const auto message_rate =
-            _transaction_message_rate(now, rate_limiting->per_code_account_last_update_sec, _per_code_account_txn_msg_rate_limit_time_frame_sec,
+            _transaction_message_rate(now, rate_limiting->per_code_account_txn_msg_rate_last_update_sec, _per_code_account_txn_msg_rate_limit_time_frame_sec,
                                      _per_code_account_txn_msg_rate_limit, rate_limiting->per_code_account_txn_msg_rate, code_account, message.code);
       _db.modify(*rate_limiting, [&] (rate_limiting_object& rlo) {
          rlo.per_code_account_txn_msg_rate = message_rate;
-         rlo.per_code_account_last_update_sec = now;
+         rlo.per_code_account_txn_msg_rate_last_update_sec = now;
       });
    }
 } FC_CAPTURE_AND_RETHROW((message)) }
 
 void chain_controller::process_message(const transaction& trx, account_name code,
-                                       const message& message, message_output& output, apply_context* parent_context) {
+                                       const message& message, message_output& output, apply_context* parent_context, int depth) {
+   const blockchain_configuration& chain_configuration = get_global_properties().configuration;
+   EOS_ASSERT(depth < chain_configuration.in_depth_limit, msg_resource_exhausted,
+     "Message processing exceeded maximum inline recursion depth of ${limit}", ("limit", chain_configuration.in_depth_limit));
+
    apply_context apply_ctx(*this, _db, trx, message, code);
    apply_message(apply_ctx);
 
@@ -967,7 +963,7 @@ void chain_controller::process_message(const transaction& trx, account_name code
       try {
          auto notify_code = apply_ctx.notified[i];
          output.notify.push_back( {notify_code} );
-         process_message(trx, notify_code, message, output.notify.back().output, &apply_ctx);
+         process_message(trx, notify_code, message, output.notify.back().output, &apply_ctx, depth + 1);
       } FC_CAPTURE_AND_RETHROW((apply_ctx.notified[i]))
    }
 
@@ -994,7 +990,7 @@ void chain_controller::process_message(const transaction& trx, account_name code
 
    // propagate used_authorizations up the context chain
    if (parent_context != nullptr)
-      for (int i = 0; i < apply_ctx.used_authorizations.size(); ++i)
+      for (size_t i = 0; i < apply_ctx.used_authorizations.size(); ++i)
          if (apply_ctx.used_authorizations[i])
             parent_context->used_authorizations[i] = true;
 
@@ -1022,9 +1018,9 @@ void chain_controller::apply_message(apply_context& context)
     if (recipient.code.size()) {
        //idump((context.code)(context.msg.type));
        const uint32_t execution_time =
-          _skip_flags | received_block
+          _skip_flags & received_block
              ? _rcvd_block_txn_execution_time
-             : _skip_flags | created_block
+             : _skip_flags & created_block
                ? _create_block_txn_execution_time
                : _txn_execution_time;
        const bool is_received_block = _skip_flags & received_block;
@@ -1043,7 +1039,7 @@ typename T::processed chain_controller::apply_transaction(const T& trx)
 } FC_CAPTURE_AND_RETHROW((trx)) }
 
 /**
- *  @pre the transaction is assumed valid and all signatures / duplicate checks have bee performed
+ *  @pre the transaction is assumed valid and all signatures / duplicate checks have been performed
  */
 template<typename T>
 typename T::processed chain_controller::process_transaction( const T& trx, int depth, const fc::time_point& start_time )
@@ -1061,7 +1057,7 @@ typename T::processed chain_controller::process_transaction( const T& trx, int d
    for( uint32_t i = 0; i < trx.messages.size(); ++i ) {
       auto& output = ptrx.output[i];
       rate_limit_message(trx.messages[i]);
-      process_message(trx, trx.messages[i].code, trx.messages[i], output);
+      process_message(trx, trx.messages[i].code, trx.messages[i], output, 0);
       if (output.inline_trx.valid() ) {
          const transaction& trx = *output.inline_trx;
          output.inline_trx = process_transaction(pending_inline_transaction(trx), depth + 1, start_time);
@@ -1210,8 +1206,8 @@ void chain_controller::initialize_chain(chain_initializer_interface& starter)
       _db.with_write_lock([this, &starter] {
          auto initial_timestamp = starter.get_chain_start_time();
          FC_ASSERT(initial_timestamp != time_point_sec(), "Must initialize genesis timestamp." );
-         FC_ASSERT(initial_timestamp.sec_since_epoch() % config::block_interval_seconds == 0,
-                    "Genesis timestamp must be divisible by config::block_interval_seconds." );
+         FC_ASSERT(initial_timestamp.sec_since_epoch() % block_interval() == 0,
+                    "Genesis timestamp must be divisible by block-interval-seconds." );
 
          // Create global properties
          _db.create<global_property_object>([&starter](global_property_object& p) {
@@ -1239,7 +1235,7 @@ void chain_controller::initialize_chain(chain_initializer_interface& starter)
             processed_transaction trx; /// dummy transaction required for scope validation
             std::sort(trx.scope.begin(), trx.scope.end() );
             with_skip_flags(skip_scope_check | skip_transaction_signatures | skip_authority_check | received_block, [&](){
-               process_message(trx,m.code,m,output); 
+               process_message(trx,m.code,m,output);
             });
 
             trx.messages.push_back(m);
@@ -1254,16 +1250,18 @@ void chain_controller::initialize_chain(chain_initializer_interface& starter)
 
 chain_controller::chain_controller(database& database, fork_database& fork_db, block_log& blocklog,
                                    chain_initializer_interface& starter, unique_ptr<chain_administration_interface> admin,
+                                   uint32_t block_interval_seconds,
                                    uint32_t txn_execution_time, uint32_t rcvd_block_txn_execution_time,
                                    uint32_t create_block_txn_execution_time,
-                                   const txn_msg_rate_limits& rate_limit,
+                                   const txn_msg_limits& rate_limit,
                                    const applied_irreverisable_block_func& applied_func)
-   : _db(database), _fork_db(fork_db), _block_log(blocklog), _admin(std::move(admin)), _txn_execution_time(txn_execution_time),
+   : _db(database), _fork_db(fork_db), _block_log(blocklog), _admin(std::move(admin)), _block_interval_seconds(block_interval_seconds),
+     _txn_execution_time(txn_execution_time),
      _rcvd_block_txn_execution_time(rcvd_block_txn_execution_time), _create_block_txn_execution_time(create_block_txn_execution_time),
-     _per_auth_account_txn_msg_rate_limit_time_frame_sec(rate_limit.per_auth_account_time_frame_sec),
-     _per_auth_account_txn_msg_rate_limit(rate_limit.per_auth_account),
-     _per_code_account_txn_msg_rate_limit_time_frame_sec(rate_limit.per_code_account_time_frame_sec),
-     _per_code_account_txn_msg_rate_limit(rate_limit.per_code_account) {
+     _per_auth_account_txn_msg_rate_limit_time_frame_sec(rate_limit.per_auth_account_txn_msg_rate_time_frame_sec),
+     _per_auth_account_txn_msg_rate_limit(rate_limit.per_auth_account_txn_msg_rate),
+     _per_code_account_txn_msg_rate_limit_time_frame_sec(rate_limit.per_code_account_txn_msg_rate_time_frame_sec),
+     _per_code_account_txn_msg_rate_limit(rate_limit.per_code_account_txn_msg_rate) {
 
    if (applied_func)
       applied_irreversible_block.connect(*applied_func);
@@ -1400,7 +1398,10 @@ void chain_controller::update_global_dynamic_data(const signed_block& b) {
          dgp.recent_slots_filled += 1;
          dgp.recent_slots_filled <<= missed_blocks;
       } else
-         dgp.recent_slots_filled = 0;
+         if(config::percent100 * get_global_properties().active_producers.size() / config::blocks_per_round > config::required_producer_participation)
+            dgp.recent_slots_filled = uint64_t(-1);
+         else
+            dgp.recent_slots_filled = 0;
    });
 
    _fork_db.set_max_size( _dgp.head_block_number - _dgp.last_irreversible_block_num + 1 );
@@ -1472,7 +1473,7 @@ void chain_controller::clear_expired_transactions()
    //Transactions must have expired by at least two forking windows in order to be removed.
    auto& transaction_idx = _db.get_mutable_index<transaction_multi_index>();
    const auto& dedupe_index = transaction_idx.indices().get<by_expiration>();
-   while( (!dedupe_index.empty()) && (head_block_time() > dedupe_index.rbegin()->trx.expiration) )
+   while( (!dedupe_index.empty()) && (head_block_time() > dedupe_index.rbegin()->expiration) )
       transaction_idx.remove(*dedupe_index.rbegin());
 
    //Look for expired transactions in the pending generated list, and remove them.
@@ -1561,7 +1562,7 @@ processed_transaction chain_controller::transaction_from_variant( const fc::vari
             if( data.is_string() ) {
                GET_FIELD( vo, data, result.messages[i] );
             } else if ( data.is_object() ) {
-               result.messages[i].data = message_to_binary( result.messages[i].code, result.messages[i].type, data ); 
+               result.messages[i].data = message_to_binary( result.messages[i].code, result.messages[i].type, data );
                /*
                const auto& code_account = _db.get<account_object,by_name>( result.messages[i].code );
                eosio::types::abi code_abi;
@@ -1624,7 +1625,7 @@ fc::variant  chain_controller::transaction_to_variant( const processed_transacti
        const auto& code_account = _db.get<account_object,by_name>( msg.code );
        if( !types::abi_serializer::is_empty_abi(code_account.abi) ) {
           try {
-             msg_mvo( "data", message_from_binary( msg.code, msg.type, msg.data ) ); 
+             msg_mvo( "data", message_from_binary( msg.code, msg.type, msg.data ) );
              msg_mvo( "hex_data", msg.data );
           } catch ( ... ) {
             SET_FIELD( msg_mvo, msg, data );
@@ -1637,7 +1638,7 @@ fc::variant  chain_controller::transaction_to_variant( const processed_transacti
     }
     trx_mvo( "messages", std::move(msgsv) );
 
-    /* TODO: recursively process generated transactions 
+    /* TODO: recursively process generated transactions
     vector<fc::mutable_variant_object> outs( trx.messages.size() );
     for( uint32_t i = 0; i < trx.output.size(); ++i ) {
        auto& out_mvo = outs[i];

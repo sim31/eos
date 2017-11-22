@@ -1,11 +1,17 @@
 #!/bin/bash
 
+###############################################################
+# -p <producing nodes count>
+# -n <total nodes>
+# -s <topology>
+# -d <delay between nodes startup>
+###############################################################
+
 pnodes=10
-npnodes=0
 topo=star
 delay=0
 
-args=`getopt p:n:t:d: $*`
+args=`getopt p:n:s:d: $*`
 if [ $? == 0 ]; then
 
     set -- $args
@@ -14,11 +20,11 @@ if [ $? == 0 ]; then
         in
             -p) pnodes=$2;
                 shift; shift;;
-            -n) nodes=$2;
+            -n) total_nodes=$2;
                 shift; shift;;
             -d) delay=$2;
                 shift; shift;;
-            -s) shape="$2";
+            -s) topo="$2";
                 shift; shift;;
             --) shift;
                 break;;
@@ -31,15 +37,21 @@ else
         if [ -n "$2" ]; then
             topo=$2
             if [ -n "$3" ]; then
-                npnodes=$3
+		total_nodes=$3
             fi
         fi
     fi
 fi
-total_nodes=`expr $pnodes + $npnodes`
+
+total_nodes="${total_nodes:-`echo $pnodes`}"
 
 rm -rf tn_data_*
-programs/launcher/launcher -p $pnodes -n $total_nodes -s $topo -d $delay
+if [ "$delay" == 0 ]; then
+    programs/launcher/launcher -p $pnodes -n $total_nodes -s $topo
+else
+    programs/launcher/launcher -p $pnodes -n $total_nodes -s $topo -d $delay
+fi
+
 sleep 7
 echo "start" > test.out
 port=8888

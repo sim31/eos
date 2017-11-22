@@ -24,7 +24,7 @@ public:
                  const types::account_name& code)
       : controller(con), db(db), trx(t), msg(m), code(code), mutable_controller(con),
         mutable_db(db), used_authorizations(msg.authorization.size(), false),
-        next_pending_transaction_serial(0){}
+        next_pending_transaction_serial(0), next_pending_message_serial(0){}
 
    template <typename ObjectType>
    int32_t store_record( name scope, name code, name table, typename ObjectType::key_type* keys, char* value, uint32_t valuelen ) {
@@ -34,11 +34,12 @@ public:
       const auto* obj = db.find<ObjectType, by_scope_primary>(tuple);
 
       if( obj ) {
+         const int32_t previous_size = obj->value.size();
          //wlog( "modify" );
          mutable_db.modify( *obj, [&]( auto& o ) {
             o.value.assign(value, valuelen);
          });
-         return 0;
+         return previous_size;
       } else {
          //wlog( "new" );
          mutable_db.create<ObjectType>( [&](auto& o) {
@@ -48,7 +49,7 @@ public:
             key_helper<ObjectType>::set(o, keys);
             o.value.insert( 0, value, valuelen );
          });
-         return 1;
+         return -1;
       }
    }
 
@@ -60,8 +61,10 @@ public:
       const auto* obj = db.find<ObjectType, by_scope_primary>(tuple);
 
       if( !obj ) {
-         return 0;
+         return -1;
       }
+
+      const int32_t previous_size = obj->value.size();
 
       mutable_db.modify( *obj, [&]( auto& o ) {
          if( valuelen > o.value.size() ) {
@@ -70,7 +73,7 @@ public:
          memcpy(o.value.data(), value, valuelen);
       });
 
-      return 1;
+      return previous_size;
    }
 
    template <typename ObjectType>
@@ -80,10 +83,11 @@ public:
       auto tuple = find_tuple<ObjectType>::get(scope, code, table, keys);
       const auto* obj = db.find<ObjectType, by_scope_primary>(tuple);
       if( obj ) {
+         const int32_t previous_size = obj->value.size();
          mutable_db.remove( *obj );
-         return 1;
+         return previous_size;
       }
-      return 0;
+      return -1;
    }
 
    template <typename IndexType, typename Scope>
