@@ -157,6 +157,7 @@ namespace eosio {
     chain_plugin*                 chain_plug;
     size_t                        just_send_it_max;
     bool                          send_whole_blocks;
+    int                           started_sessions;
 
     node_transaction_index        local_txns;
     ordered_txn_ids               pending_notify;
@@ -263,8 +264,8 @@ namespace eosio {
    */
   constexpr auto     def_send_buffer_size_mb = 4;
   constexpr auto     def_send_buffer_size = 1024*1024*def_send_buffer_size_mb;
-  constexpr auto     def_max_clients = 20; // 0 for unlimited clients
-  constexpr auto     def_conn_retry_wait = std::chrono::seconds (30);
+  constexpr auto     def_max_clients = 25; // 0 for unlimited clients
+  constexpr auto     def_conn_retry_wait = 30;
   constexpr auto     def_txn_expire_wait = std::chrono::seconds (3);
   constexpr auto     def_resp_expected_wait = std::chrono::seconds (1);
   constexpr auto     def_sync_rec_span = 10;
@@ -489,6 +490,7 @@ namespace eosio {
   public:
     sync_manager (uint32_t span);
     bool syncing ();
+    void request_next_chunk ();
     void assign_chunk (connection_ptr c);
     void apply_chunk (sync_state_ptr ss);
     void take_chunk (connection_ptr c);
@@ -977,6 +979,17 @@ namespace eosio {
             chain_plug->chain( ).head_block_num( ) < sync_last_requested_num );
   }
 
+  void sync_manager::request_next_chunk () {
+    uint32_t head_block = chain_plug->chain().head_block_num();
+    for (auto &c : my_impl->connections ) {
+      if (c->sync_receiving && c->sync_receiving->start_block == head_block + 1) {
+        c->enqueue( (sync_request_message){c->sync_receiving->start_block,
+              c->sync_receiving->end_block});
+        sync_last_requested_num = c->sync_receiving->end_block;
+      }
+    }
+  }
+
   void sync_manager::assign_chunk( connection_ptr c ) {
     uint32_t start = 0;
     uint32_t end = 0;
@@ -1001,10 +1014,12 @@ namespace eosio {
       fc_dlog(logger, "conn ${n} resetting sync recv",("n",c->peer_name() ));
       c->sync_receiving.reset ( );
     }
+#if 0
     if( end > 0 && end >= start ) {
       c->enqueue( (sync_request_message){start, end} );
       sync_last_requested_num = end;
     }
+#endif
   }
 
     struct postcache : public fc::visitor<void> {
@@ -1018,7 +1033,7 @@ namespace eosio {
         } catch( const unlinkable_block_exception &ex ) {
           elog( "post cache: unlinkable_block_exception accept block #${n}",("n",block.block_num()));
         } catch (const assert_exception &ex) {
-          elog ("post cache: unable to accept block on assert exception ${n}",("n",ex.what()));
+          elog ("post cache: unable to accept block on assert exception ${n}",("n",ex.to_string()));
         } catch (const fc::exception &ex) {
           elog ("post cache: accept_block threw a non-assert exception ${x}", ("x",ex.what()));
         } catch (...) {
@@ -1099,6 +1114,7 @@ namespace eosio {
       if( c->connected()) {
         assign_chunk( c);
       }
+      request_next_chunk();
     }
 
     void sync_manager::start_sync( connection_ptr c, uint32_t target) {
@@ -1114,6 +1130,7 @@ namespace eosio {
         return;
       }
       assign_chunk( c);
+      request_next_chunk();
     }
 
   void sync_manager::reassign_fetch( connection_ptr c) {
@@ -1168,6 +1185,9 @@ namespace eosio {
                                        ( "peer", c->peer_name())("error",err.message()));
                                  c->connecting = false;
                                  c->close();
+                                 if (started_sessions == 0) {
+                                   connect (c);
+                                 }
                                }
                              }
                            } );
@@ -1177,6 +1197,7 @@ namespace eosio {
       boost::asio::ip::tcp::no_delay option( true );
       con->socket->set_option( option );
       start_read_message( con );
+      ++started_sessions;
       con->send_handshake( );
 
       // for now, we can just use the application main loop.
@@ -1636,6 +1657,7 @@ namespace eosio {
       }
     }
 
+
     void net_plugin_impl::handle_message( connection_ptr c, const signed_transaction &msg) {
       fc_dlog(logger, "got a signed transaction from ${p}", ("p",c->peer_name()));
       transaction_id_type txnid = msg.id();
@@ -1724,7 +1746,7 @@ namespace eosio {
       }
       else {
         if( c->sync_receiving->last + 1 != num) {
-          wlog( "expected block ${next} but got ${num} ihnotinh got now",("next",c->sync_receiving->last+1)("num",num));
+          wlog( "expected block ${next} but got ${num}",("next",c->sync_receiving->last+1)("num",num));
           return;
         }
         c->sync_receiving->last = num;
@@ -2149,6 +2171,8 @@ namespace eosio {
      ( "peer-private-key", boost::program_options::value<vector<string>>()->composing()->multitoken(),
        "Tuple of [PublicKey, WIF private key] (may specify multiple times)")
      ( "log-level-net-plugin", bpo::value<string>()->default_value("info"), "Log level: one of 'all', 'debug', 'info', 'warn', 'error', or 'off'")
+      ( "max-clients", bpo::value<int>()->default_value(def_max_clients), "Maximum number of clients from which connections are accepted, use 0 for no limit")
+      ( "connection-cleanup-period", bpo::value<int>()->default_value(def_conn_retry_wait), "number of seconds to wait before cleaning up dead connections")
      ;
   }
 
@@ -2189,12 +2213,15 @@ namespace eosio {
 
     my->sync_master.reset( new sync_manager( def_sync_rec_span ) );
 
-    my->connector_period = def_conn_retry_wait;
+    my->connector_period = std::chrono::seconds(options.at("connection-cleanup-period").as<int>());
     my->txn_exp_period = def_txn_expire_wait;
     my->resp_expected_period = def_resp_expected_wait;
     my->just_send_it_max = def_max_just_send;
+    my->max_client_count = options.at("max-clients").as<int>();
+
     my->max_client_count = def_max_clients;
     my->num_clients = 0;
+    my->started_sessions = 0;
 
     my->resolver = std::make_shared<tcp::resolver>( std::ref( app().get_io_service() ) );
     if(options.count("listen-endpoint")) {
